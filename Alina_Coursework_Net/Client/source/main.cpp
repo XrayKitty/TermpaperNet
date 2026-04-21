@@ -138,7 +138,7 @@ public:
 
 int main()
 {
-    //Подключение русского языка в Windows
+    //Это комментарий Ивана
     system("chcp 1251>nul");
 
     std::string userName;
