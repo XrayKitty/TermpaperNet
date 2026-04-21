@@ -138,7 +138,7 @@ public:
 
 int main()
 {
-    //Это комментарий Ивана
+    //Комментарий Ивана и Алины
     system("chcp 1251>nul");
 
     std::string userName;
