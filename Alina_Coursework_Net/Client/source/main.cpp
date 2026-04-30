@@ -119,7 +119,8 @@ public:
         packet >> message;
         if (message == "Ok") return "Соединение установлено"; 
         tcpSocket.disconnect();
-        return "Сообщение неккоректно";    }
+        return "Сообщение неккоректно";    
+    }
 
     std::string Disconected() {
         if (!IsConnect()) {
@@ -217,7 +218,7 @@ int main()
             }
             std::cout << "Введите ID пользователя, которого хотите заблокировать >";
             std::cin >> userId;
-            mess = { Command_type::Block, userId, "" };
+            mess = { Command_type::Block, userId, " " };
             std::cout << user.SendMessage(mess) << std::endl;
             break;
         case 4:
@@ -227,7 +228,7 @@ int main()
             }
             std::cout << "Введите ID пользователя, которого хотите расблокировать >";
             std::cin >> userId;
-            mess = { Command_type::Unblock, userId, "" };
+            mess = { Command_type::Unblock, userId, " " };
             std::cout << user.SendMessage(mess) << std::endl;
             break;
         case 5:
@@ -248,7 +249,7 @@ int main()
                 std::cout << "Вы не подключены!" << std::endl;
                 break;
             }
-            mess = { Command_type::Users, 0 ,"" };
+            mess = { Command_type::Users, 0 ," " };
             std::cout << user.SendMessage(mess) << std::endl;
             break;
         case 0:

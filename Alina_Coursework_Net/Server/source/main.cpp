@@ -225,15 +225,18 @@ public:
 		while (run)
 			if (selector.wait()) {
 				if (selector.isReady(listener)) {
+					std::cout << "Кто-то пытается подключиться к слушателю" << std::endl;
 					NewClient();
 					continue;
 				}
 				if (selector.isReady(udpSocket)) {
+					std::cout << "Что-то пришло на UDP" << std::endl;
 					HelloUdp();
 					continue;
 				}
 				for (auto& [user_id, socket] : users_socket) {
 					if (selector.isReady(socket)) {
+						std::cout << "Пакет на сокете:" << user_id << std::endl;
 						Message receive_mess = ReceiveMessage(user_id);
 						std::string send_mess = ProcesiingMessage(receive_mess);
 						SendMessage(socket, send_mess);
