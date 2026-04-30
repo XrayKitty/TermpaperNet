@@ -189,6 +189,10 @@ int main()
 
         switch (a) {
         case 1:
+            if (!user.IsConnect()) {
+                std::cout << "Вы не подключены!" << std::endl;
+                break;
+            }
             std::cout << "Введите id пользователя, которому хотите отправить сообщение";
             std::cin >> userId;
             std::cout << "Введите ваше сообщение" << std::endl;
@@ -199,22 +203,38 @@ int main()
             std::cout << user.SendMessage(mess) << std::endl;
             break;
         case 2:
+            if (!user.IsConnect()) {
+                std::cout << "Вы не подключены!" << std::endl;
+                break;
+            }
             std::cout << "У вас " << user.GetCountNewMessage()<< " новых сообщений" << std::endl;
             std::cout << user.GetNewMessage() << std::endl;
             break;
         case 3:
+            if (!user.IsConnect()) {
+                std::cout << "Вы не подключены!" << std::endl;
+                break;
+            }
             std::cout << "Введите ID пользователя, которого хотите заблокировать >";
             std::cin >> userId;
             mess = { Command_type::Block, userId, "" };
             std::cout << user.SendMessage(mess) << std::endl;
             break;
         case 4:
+            if (!user.IsConnect()) {
+                std::cout << "Вы не подключены!" << std::endl;
+                break;
+            }
             std::cout << "Введите ID пользователя, которого хотите расблокировать >";
             std::cin >> userId;
             mess = { Command_type::Unblock, userId, "" };
             std::cout << user.SendMessage(mess) << std::endl;
             break;
         case 5:
+            if (!user.IsConnect()) {
+                std::cout << "Вы не подключены!" << std::endl;
+                break;
+            }
             std::cout << user.Update() << std::endl;
             break;
         case 6:
@@ -224,6 +244,10 @@ int main()
             std::cout << user.Disconected() << std::endl;
             break;
         case 8:
+            if (!user.IsConnect()) {
+                std::cout << "Вы не подключены!" << std::endl;
+                break;
+            }
             mess = { Command_type::Users, 0 ,"" };
             std::cout << user.SendMessage(mess) << std::endl;
             break;
