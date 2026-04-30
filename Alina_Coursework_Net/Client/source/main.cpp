@@ -25,16 +25,6 @@ class Client {
     sf::SocketSelector selector;
     bool connected;
 
-    void ReceiveMessages() {
-        sf::Packet packet;
-        while (connected && tcpSocket.receive(packet) == sf::Socket::Status::Done) {
-            std::string msg;
-            packet >> msg;
-            newMessage.push(msg);
-            std::cout << "\n[НОВОЕ СООБЩЕНИЕ]\n" << msg << std::endl;
-        }
-    }
-
 public:
     Client(unsigned short port = 3000) : portHello(port), connected(false) {
         tcpSocket.setBlocking(false);
@@ -102,7 +92,6 @@ public:
         if (response == "Ok") {
             connected = true;
             tcpSocket.setBlocking(false);
-            selector.add(tcpSocket);
             return "Соединение установлено";
         }
 
@@ -132,16 +121,40 @@ public:
         return "Ошибка отправки";
     }
 
-    void Update() {
-        if (!connected) return;
+    std::string Update() {
+        if (!connected) return "Не подключен";
 
-        // Проверяем входящие сообщения
+        int receivedCount = 0;
         sf::Packet packet;
-        while (tcpSocket.receive(packet) == sf::Socket::Status::Done) {
-            std::string msg;
-            packet >> msg;
-            newMessage.push(msg);
+
+        // Проверяем входящие сообщения в цикле
+        while (true) {
+            sf::Socket::Status status = tcpSocket.receive(packet);
+            if (status == sf::Socket::Status::Done) {
+                std::string msg;
+                packet >> msg;
+                newMessage.push(msg);
+                receivedCount++;
+                packet.clear();
+            }
+            else if (status == sf::Socket::Status::NotReady) {
+                // Нет больше данных для чтения
+                break;
+            }
+            else if (status == sf::Socket::Status::Disconnected) {
+                connected = false;
+                return "Соединение разорвано";
+            }
+            else {
+                // Другая ошибка
+                break;
+            }
         }
+
+        if (receivedCount > 0) {
+            return "Получено " + std::to_string(receivedCount) + " сообщений";
+        }
+        return "Нет новых сообщений";
     }
 };
 
@@ -172,6 +185,7 @@ int main() {
             << "5. Заблокировать\n"
             << "6. Разблокировать\n"
             << "7. Показать сообщения\n"
+            << "8. Обновить\n"
             << "0. Выход\n"
             << "Выбор: ";
 
@@ -197,14 +211,16 @@ int main() {
 
             // Ждем ответ
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            client.Update();
+
+            // Обновляем и получаем ответ
+            std::cout << client.Update() << std::endl;
 
             std::string usersList = client.GetNewMessage();
             if (!usersList.empty()) {
                 std::cout << "\n" << usersList << std::endl;
             }
             else {
-                std::cout << "Нет ответа\n";
+                std::cout << "Нет ответа от сервера\n";
             }
             break;
         }
@@ -251,14 +267,17 @@ int main() {
             std::cout << client.GetNewMessage() << std::endl;
             break;
 
+        case 8:
+            if (!client.IsConnect()) {
+                std::cout << "Не подключен!\n";
+                break;
+            }
+            std::cout << client.Update() << std::endl;
+            break;
+
         case 0:
             running = false;
             break;
-        }
-
-        // Фоновое обновление
-        if (client.IsConnect()) {
-            client.Update();
         }
     }
 
