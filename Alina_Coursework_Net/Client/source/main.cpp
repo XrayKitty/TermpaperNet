@@ -73,7 +73,22 @@ public:
         // Отправка приветственного сообщения серверу
         message = "Hello";
         packet << message;
-        status = udpSocket.send(packet, sf::IpAddress::Broadcast, portHello);
+
+        uint32_t ip = sf::IpAddress::getLocalAddress().value().toInteger();
+        std::cout << "Ip адрес компьютера:" << sf::IpAddress::getLocalAddress().value() << std::endl;
+        uint32_t mask = 0;
+        uint32_t broadcast;
+        switch (ip >> 24) {
+        case 192: mask = 0xffffff00; break;
+        case 172: mask = 0xffff0000; break;
+        //case 10: mask = 0xff000000; break;
+        case 10: mask = 0xfffff000; break;
+        default: mask = 0xffffffff;
+        }
+
+        broadcast = ip | ~mask;
+        std::cout << sf::IpAddress::IpAddress(broadcast).toString() << std::endl;
+        status = udpSocket.send(packet, sf::IpAddress::IpAddress(broadcast), portHello);
         if (status != sf::Socket::Status::Done) return "Серверу не удалось отправить привественное сообщение";
 
         // Получение приветствия от сервера и его проверка
@@ -164,7 +179,8 @@ int main()
             << "5. Обновить" << std::endl
             << "6. Подключиться" << std::endl
             << "7. Отключиться" << std::endl
-            << "8. Список пользователей" << std::endl;
+            << "8. Список пользователей" << std::endl
+            << "0. Выйти" << std::endl;
         std::cin >> a;
 
         unsigned short userId;
@@ -210,6 +226,9 @@ int main()
         case 8:
             mess = { Command_type::Users, 0 ,"" };
             std::cout << user.SendMessage(mess) << std::endl;
+            break;
+        case 0:
+            run = false;
             break;
         }
     }

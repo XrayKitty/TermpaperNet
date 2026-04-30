@@ -66,7 +66,7 @@ class Server {
 		return users.count(userId);
 	}
 
-	void NewClient() {
+	void NewClient() {	
 		sf::TcpSocket socket;
 		if (listener.accept(socket) != sf::Socket::Status::Done) {
 			std::cerr << "Ошибка подключения с адреса:" << socket.getRemoteAddress().value() << ':' << socket.getRemotePort() << std::endl;
