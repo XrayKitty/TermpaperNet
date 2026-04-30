@@ -2,6 +2,8 @@
 #include "Command_Type.hpp"
 #include <iostream>
 #include <queue>
+#include <thread>
+#include <chrono>
 
 struct Message {
     Command_type comand;
@@ -21,240 +23,244 @@ class Client {
     unsigned short portHello;
     std::queue<std::string> newMessage;
     sf::SocketSelector selector;
+    bool connected;
 
-    // Функция вернет текст сообщения полученного от сервера в случае ошибки вернет пустую строку
-    std::string ResiveMessage() {
-        std::string message;
+    void ReceiveMessages() {
         sf::Packet packet;
-        sf::Socket::Status status;
-        status = tcpSocket.receive(packet);
-        if (status == sf::Socket::Status::Disconnected) return "";
-        if (status == sf::Socket::Status::Error) return "";
-
-        packet >> message;
-        return message;
+        while (connected && tcpSocket.receive(packet) == sf::Socket::Status::Done) {
+            std::string msg;
+            packet >> msg;
+            newMessage.push(msg);
+            std::cout << "\n[НОВОЕ СООБЩЕНИЕ]\n" << msg << std::endl;
+        }
     }
 
 public:
-    Client(unsigned short port = 3000): portHello(port) {
+    Client(unsigned short port = 3000) : portHello(port), connected(false) {
+        tcpSocket.setBlocking(false);
         selector.add(tcpSocket);
     }
 
     std::string GetNewMessage() {
         std::string message;
         while (!newMessage.empty()) {
-            std::string mess = newMessage.front();
-            message += mess + '\n';
+            message += newMessage.front() + "\n";
             newMessage.pop();
         }
         return message;
     }
 
-    bool IsConnect() {
-        return tcpSocket.getRemotePort();
-    }
-
+    bool IsConnect() { return connected; }
     size_t GetCountNewMessage() const { return newMessage.size(); }
 
     std::string Connect(std::string userName) {
-        // проверка на то что соединение уже установлено
-        if (IsConnect()) return "Подключесние установлено!";
+        if (connected) return "Уже подключен";
 
-        // Служебные переменные
-        sf::Socket::Status status;
-        sf::Packet packet;
-        std::string message;
-        unsigned short port;
-        std::optional<sf::IpAddress> ipAddress;
-
-        // Привязка сокета
         udpSocket.bind(sf::Socket::AnyPort);
+        udpSocket.setBlocking(true);
 
-        // Отправка приветственного сообщения серверу
-        message = "Hello";
-        packet << message;
+        // Broadcast
+        sf::Packet packet;
+        packet << std::string("Hello");
+        udpSocket.send(packet, sf::IpAddress::Broadcast, portHello);
 
-        uint32_t ip = sf::IpAddress::getLocalAddress().value().toInteger();
-        std::cout << "Ip адрес компьютера:" << sf::IpAddress::getLocalAddress().value() << std::endl;
-        uint32_t mask = 0;
-        uint32_t broadcast;
-        switch (ip >> 24) {
-        case 192: mask = 0xffffff00; break;
-        case 172: mask = 0xffff0000; break;
-        //case 10: mask = 0xff000000; break;
-        case 10: mask = 0xfffff000; break;
-        default: mask = 0xffffffff;
+        // Ждем ответ
+        std::optional<sf::IpAddress> serverIp;
+        unsigned short serverPort;
+        packet.clear();
+        if (udpSocket.receive(packet, serverIp, serverPort) != sf::Socket::Status::Done) {
+            return "Нет ответа от сервера";
         }
 
-        broadcast = ip | ~mask;
-        std::cout << sf::IpAddress::IpAddress(broadcast).toString() << std::endl;
-        status = udpSocket.send(packet, sf::IpAddress::IpAddress(broadcast), portHello);
-        if (status != sf::Socket::Status::Done) return "Серверу не удалось отправить привественное сообщение";
+        std::string response;
+        unsigned short tcpPort;
+        packet >> response >> tcpPort;
+        if (response != "Hello") return "Неверный ответ";
 
-        // Получение приветствия от сервера и его проверка
-        packet.clear();
-        status = udpSocket.receive(packet, ipAddress, port);
-        if (status != sf::Socket::Status::Done) return "Не удалось получить приветственное сообщение от сервера";
-        packet >> message >> port;
-        if (message != "Hello") return "Сервер отправил некорректное приветствие";
+        // TCP подключение
+        tcpSocket.setBlocking(true);
+        if (tcpSocket.connect(serverIp.value(), tcpPort) != sf::Socket::Status::Done) {
+            return "Ошибка TCP подключения";
+        }
 
-        // Подключение к серверу
-        status = tcpSocket.connect(ipAddress.value(), port);
-        if (status != sf::Socket::Status::Done) return "Ошибка при подключении к серверу";
-
-        // отпарвка имени пользователя
+        // Отправка имени
         packet.clear();
         packet << userName;
-        status = tcpSocket.send(packet);
-        if (status != sf::Socket::Status::Done) {
+        if (tcpSocket.send(packet) != sf::Socket::Status::Done) {
             tcpSocket.disconnect();
-            return "Серверу не удалось отправить имя пользователя";
+            return "Ошибка отправки имени";
         }
-        // получение подтверждения от сервера что имя пользователя корректно
-        status = tcpSocket.receive(packet);
-        if (status != sf::Socket::Status::Done) {
+
+        // Подтверждение
+        packet.clear();
+        if (tcpSocket.receive(packet) != sf::Socket::Status::Done) {
             tcpSocket.disconnect();
-            return "Имя пользователя получено некорректно";
+            return "Нет подтверждения";
         }
-        packet >> message;
-        if (message == "Ok") return "Соединение установлено"; 
+
+        packet >> response;
+        if (response == "Ok") {
+            connected = true;
+            tcpSocket.setBlocking(false);
+            selector.add(tcpSocket);
+            return "Соединение установлено";
+        }
+
         tcpSocket.disconnect();
-        return "Сообщение неккоректно";    
+        return "Отказ сервера";
     }
 
     std::string Disconected() {
-        if (!IsConnect()) {
-            return "Сервер не подключен";
-        }
+        if (!connected) return "Не подключен";
+        connected = false;
         tcpSocket.disconnect();
-        return "Отключение успешно выполнено";
+        return "Отключено";
     }
 
     std::string SendMessage(Message& message) {
-        if (message.message.empty()) return "Вы не можете отправить пустое сообщение";
-        sf::Packet packet;
-        sf::Socket::Status status;
-        packet << std::int8_t(message.comand) << message.resiverId << message.message;
-        status = tcpSocket.send(packet);
+        if (!connected) return "Не подключен";
+        if (message.comand == Command_type::SendMessage && message.message.empty()) {
+            return "Пустое сообщение";
+        }
 
-        if (status == sf::Socket::Status::Error) return "Произошла неизвестная ошибка при отправке";
-        if (status == sf::Socket::Status::Disconnected) return "Соединение было разорвано при отправке";
-        return "Сообщение успешно доставлено";
+        sf::Packet packet;
+        packet << static_cast<std::int8_t>(message.comand) << message.resiverId << message.message;
+
+        if (tcpSocket.send(packet) == sf::Socket::Status::Done) {
+            return "Отправлено";
+        }
+        return "Ошибка отправки";
     }
 
-    std::string Update() {
-        while (selector.isReady(tcpSocket)) {
-            std::string message = ResiveMessage();
-            if (message.empty()) return "Ошибка получения сообщения";
-            newMessage.push(message);
+    void Update() {
+        if (!connected) return;
+
+        // Проверяем входящие сообщения
+        sf::Packet packet;
+        while (tcpSocket.receive(packet) == sf::Socket::Status::Done) {
+            std::string msg;
+            packet >> msg;
+            newMessage.push(msg);
         }
-        return "Успешно полученный сообщения";
     }
 };
 
-int main()
-{
-    //Комментарий Ивана и Алины
+int main() {
     system("chcp 1251>nul");
 
     std::string userName;
     unsigned short port;
-    bool run = true;
 
-    std::cout << "Введите ваше имя полтзователя >";
+    std::cout << "Введите имя: ";
     std::cin >> userName;
-    std::cout << "Введите порт на который хотите подключиться >";
+    std::cout << "Порт: ";
     std::cin >> port;
 
-    Client user(port);
-    while(run) {
-        int a;
-        std::cout << "Имя пользователя: " << userName << std::endl
-            << "Статус подключения: " << (user.IsConnect() ? "В сети" : "Не в сети") << std::endl
-            << "Колличество новых сообщений: " << user.GetCountNewMessage() << std::endl
-            << std::endl << "Меню:" << std::endl
-            << "1. Отправить сообщение" << std::endl
-            << "2. Непрачитанные сообщения" << std::endl
-            << "3. Заблокировать" << std::endl
-            << "4. Разблокировать" << std::endl
-            << "5. Обновить" << std::endl
-            << "6. Подключиться" << std::endl
-            << "7. Отключиться" << std::endl
-            << "8. Список пользователей" << std::endl
-            << "0. Выйти" << std::endl;
-        std::cin >> a;
+    Client client(port);
+    bool running = true;
 
-        unsigned short userId;
-        std::string message;
-        Message mess;
+    while (running) {
+        std::cout << "\n=====================================\n"
+            << "Пользователь: " << userName << "\n"
+            << "Статус: " << (client.IsConnect() ? "В сети" : "Не в сети") << "\n"
+            << "Сообщений: " << client.GetCountNewMessage() << "\n"
+            << "=====================================\n"
+            << "1. Подключиться\n"
+            << "2. Отключиться\n"
+            << "3. Список пользователей\n"
+            << "4. Отправить сообщение\n"
+            << "5. Заблокировать\n"
+            << "6. Разблокировать\n"
+            << "7. Показать сообщения\n"
+            << "0. Выход\n"
+            << "Выбор: ";
 
-        switch (a) {
+        int choice;
+        std::cin >> choice;
+
+        switch (choice) {
         case 1:
-            if (!user.IsConnect()) {
-                std::cout << "Вы не подключены!" << std::endl;
-                break;
-            }
-            std::cout << "Введите id пользователя, которому хотите отправить сообщение";
-            std::cin >> userId;
-            std::cout << "Введите ваше сообщение" << std::endl;
-            std::getline(std::cin, message);
-            std::getline(std::cin, message);
+            std::cout << client.Connect(userName) << std::endl;
+            break;
 
-            mess = { Command_type::SendMessage, userId, message };
-            std::cout << user.SendMessage(mess) << std::endl;
-            break;
         case 2:
-            if (!user.IsConnect()) {
-                std::cout << "Вы не подключены!" << std::endl;
+            std::cout << client.Disconected() << std::endl;
+            break;
+
+        case 3: {
+            if (!client.IsConnect()) {
+                std::cout << "Не подключен!\n";
                 break;
             }
-            std::cout << "У вас " << user.GetCountNewMessage()<< " новых сообщений" << std::endl;
-            std::cout << user.GetNewMessage() << std::endl;
-            break;
-        case 3:
-            if (!user.IsConnect()) {
-                std::cout << "Вы не подключены!" << std::endl;
-                break;
+            Message msg(Command_type::Users, 0, "");
+            std::cout << "Запрос: " << client.SendMessage(msg) << std::endl;
+
+            // Ждем ответ
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            client.Update();
+
+            std::string usersList = client.GetNewMessage();
+            if (!usersList.empty()) {
+                std::cout << "\n" << usersList << std::endl;
             }
-            std::cout << "Введите ID пользователя, которого хотите заблокировать >";
-            std::cin >> userId;
-            mess = { Command_type::Block, userId, " " };
-            std::cout << user.SendMessage(mess) << std::endl;
-            break;
-        case 4:
-            if (!user.IsConnect()) {
-                std::cout << "Вы не подключены!" << std::endl;
-                break;
+            else {
+                std::cout << "Нет ответа\n";
             }
-            std::cout << "Введите ID пользователя, которого хотите расблокировать >";
-            std::cin >> userId;
-            mess = { Command_type::Unblock, userId, " " };
-            std::cout << user.SendMessage(mess) << std::endl;
-            break;
-        case 5:
-            if (!user.IsConnect()) {
-                std::cout << "Вы не подключены!" << std::endl;
-                break;
-            }
-            std::cout << user.Update() << std::endl;
-            break;
-        case 6:
-            std::cout << user.Connect(userName) << std::endl;
-            break;
-        case 7:
-            std::cout << user.Disconected() << std::endl;
-            break;
-        case 8:
-            if (!user.IsConnect()) {
-                std::cout << "Вы не подключены!" << std::endl;
-                break;
-            }
-            mess = { Command_type::Users, 0 ," " };
-            std::cout << user.SendMessage(mess) << std::endl;
-            break;
-        case 0:
-            run = false;
             break;
         }
+
+        case 4: {
+            if (!client.IsConnect()) {
+                std::cout << "Не подключен!\n";
+                break;
+            }
+            unsigned short toId;
+            std::string text;
+            std::cout << "ID: ";
+            std::cin >> toId;
+            std::cin.ignore();
+            std::cout << "Сообщение: ";
+            std::getline(std::cin, text);
+
+            Message msg(Command_type::SendMessage, toId, text);
+            std::cout << client.SendMessage(msg) << std::endl;
+            break;
+        }
+
+        case 5: {
+            if (!client.IsConnect()) break;
+            unsigned short id;
+            std::cout << "ID для блокировки: ";
+            std::cin >> id;
+            Message msg(Command_type::Block, id, "");
+            std::cout << client.SendMessage(msg) << std::endl;
+            break;
+        }
+
+        case 6: {
+            if (!client.IsConnect()) break;
+            unsigned short id;
+            std::cout << "ID для разблокировки: ";
+            std::cin >> id;
+            Message msg(Command_type::Unblock, id, "");
+            std::cout << client.SendMessage(msg) << std::endl;
+            break;
+        }
+
+        case 7:
+            std::cout << client.GetNewMessage() << std::endl;
+            break;
+
+        case 0:
+            running = false;
+            break;
+        }
+
+        // Фоновое обновление
+        if (client.IsConnect()) {
+            client.Update();
+        }
     }
+
+    return 0;
 }
